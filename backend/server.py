@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, EmailStr
 import httpx
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+from pix_brcode import build_pix_payload
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -41,6 +42,7 @@ PREMIUM_DAYS = int(os.environ.get("PREMIUM_DAYS", "30"))
 PIX_KEY = os.environ.get("PIX_KEY", "")
 PIX_KEY_TYPE = os.environ.get("PIX_KEY_TYPE", "Celular")
 PIX_HOLDER_NAME = os.environ.get("PIX_HOLDER_NAME", "Roteira")
+PIX_CITY = os.environ.get("PIX_CITY", "RECIFE")
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -470,12 +472,27 @@ def _new_activation_code() -> str:
 
 @api.get("/payments/pix-info")
 async def pix_info():
+    brcode = ""
+    if PIX_KEY:
+        try:
+            brcode = build_pix_payload(
+                key=PIX_KEY,
+                amount=float(PREMIUM_PRICE_BRL),
+                merchant_name=PIX_HOLDER_NAME,
+                merchant_city=PIX_CITY,
+                txid="ROTEIRA",
+                key_type=PIX_KEY_TYPE,
+            )
+        except Exception as e:
+            logger.warning("pix brcode error: %s", e)
     return {
         "price_brl": PREMIUM_PRICE_BRL,
         "days": PREMIUM_DAYS,
         "pix_key": PIX_KEY,
         "pix_key_type": PIX_KEY_TYPE,
         "holder_name": PIX_HOLDER_NAME,
+        "city": PIX_CITY,
+        "brcode": brcode,
     }
 
 @api.post("/payments/pix-submit")
@@ -580,10 +597,11 @@ async def admin_stats(_: User = Depends(admin_required)):
 @api.get("/admin/users")
 async def admin_users(_: User = Depends(admin_required)):
     users = await db.users.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    m = current_month_key()
+    usage_docs = await db.usage.find({"month": m}, {"_id": 0}).to_list(2000)
+    usage_by_user = {u["user_id"]: u.get("count", 0) for u in usage_docs}
     for u in users:
-        m = current_month_key()
-        usage = await db.usage.find_one({"user_id": u["user_id"], "month": m}, {"_id": 0})
-        u["month_usage"] = usage["count"] if usage else 0
+        u["month_usage"] = usage_by_user.get(u["user_id"], 0)
     return {"users": users}
 
 @api.get("/admin/pix")

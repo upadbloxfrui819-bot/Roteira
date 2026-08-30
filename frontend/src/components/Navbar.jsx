@@ -2,7 +2,8 @@ import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { Button } from "./ui/button";
-import { Sparkle, SignOut, User as UserIcon } from "@phosphor-icons/react";
+import { SignOut, User as UserIcon } from "@phosphor-icons/react";
+import { Logo } from "./Logo";
 
 export const Navbar = () => {
   const { user, logout } = useAuth();
@@ -11,14 +12,11 @@ export const Navbar = () => {
   return (
     <header
       data-testid="site-navbar"
-      className="sticky top-0 z-50 bg-zinc-950/70 backdrop-blur-xl border-b border-white/10"
+      className="sticky top-0 z-50 bg-zinc-950/80 backdrop-blur-xl border-b border-white/10"
     >
-      <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-4">
-        <Link to="/" className="flex items-center gap-2" data-testid="brand-link">
-          <span className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <Sparkle weight="fill" size={18} className="text-primary-foreground" />
-          </span>
-          <span className="font-display text-xl font-bold tracking-tighter">Roteira</span>
+      <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-3">
+        <Link to="/" className="flex items-center" data-testid="brand-link">
+          <Logo size={40} />
         </Link>
 
         <nav className="hidden md:flex items-center gap-8 text-sm text-zinc-400">

@@ -9,6 +9,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../components/ui/dialog";
 import { CheckCircle, Crown, Copy, QrCode, Ticket, ArrowRight } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import { QRCodeSVG } from "qrcode.react";
 
 export default function Pricing() {
   const { user, refresh } = useAuth();
@@ -40,6 +41,12 @@ export default function Pricing() {
   const copyKey = async () => {
     if (!pix?.pix_key) return;
     try { await navigator.clipboard.writeText(pix.pix_key); toast.success("Chave PIX copiada!"); }
+    catch { toast.error("Não foi possível copiar."); }
+  };
+
+  const copyBrcode = async () => {
+    if (!pix?.brcode) return;
+    try { await navigator.clipboard.writeText(pix.brcode); toast.success("Código Copia e Cola copiado!"); }
     catch { toast.error("Não foi possível copiar."); }
   };
 
@@ -153,6 +160,11 @@ export default function Pricing() {
 
           {!pixDone ? (
             <div className="space-y-4">
+              {pix?.brcode && (
+                <div className="rounded-xl border border-white/10 bg-white p-4 flex justify-center" data-testid="pix-qrcode">
+                  <QRCodeSVG value={pix.brcode} size={200} level="M" includeMargin={false} />
+                </div>
+              )}
               <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4 space-y-2">
                 <Row label="Tipo" value={pix?.pix_key_type || "-"} />
                 <Row label="Titular" value={pix?.holder_name || "-"} />
@@ -166,6 +178,17 @@ export default function Pricing() {
                   </Button>
                 </div>
                 <Row label="Valor" value={`R$ ${cfg.premium_price_brl.toFixed(2).replace(".", ",")}`} />
+                {pix?.brcode && (
+                  <div className="pt-2 border-t border-white/10">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs text-zinc-500 uppercase tracking-widest">Copia e Cola</div>
+                      <Button size="sm" variant="outline" onClick={copyBrcode} className="rounded-full border-white/15 hover:bg-white/5 h-7" data-testid="copy-brcode-btn">
+                        <Copy size={12} className="mr-1" /> Copiar código
+                      </Button>
+                    </div>
+                    <p className="mt-2 text-[10px] text-zinc-500 font-mono break-all leading-relaxed">{pix.brcode}</p>
+                  </div>
+                )}
               </div>
 
               <form onSubmit={submitPix} className="space-y-3" data-testid="pix-form">

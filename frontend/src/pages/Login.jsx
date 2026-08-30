@@ -4,6 +4,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Sparkle, GoogleLogo, ShieldCheck } from "@phosphor-icons/react";
+import { Logo } from "../components/Logo";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { toast } from "sonner";
@@ -45,11 +46,8 @@ export default function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center px-6 py-24" data-testid="login-page">
       <div className="w-full max-w-md">
-        <div className="flex items-center justify-center gap-2 mb-8">
-          <span className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-            <Sparkle weight="fill" size={22} className="text-primary-foreground" />
-          </span>
-          <span className="font-display text-2xl font-bold tracking-tighter">Roteira</span>
+        <div className="flex items-center justify-center mb-8">
+          <Logo size={56} />
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-8">
