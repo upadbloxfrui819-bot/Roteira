@@ -1,0 +1,99 @@
+{
+  "theme": "Dark Theme (Archetype 7: Electric & Neon - Creator Edition)",
+  "typography": {
+    "headings": {
+      "family": "'Unbounded', sans-serif",
+      "import": "@import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;800;900&display=swap');",
+      "rules": "Use for H1-H4. MUST use tight letter spacing (tracking-tighter). Never center-align by default."
+    },
+    "body": {
+      "family": "'Manrope', sans-serif",
+      "import": "@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');",
+      "rules": "Use for all paragraphs, labels, and small text. Keep leading-relaxed for body text."
+    },
+    "hierarchy_rules": "H1 max size is text-5xl to text-6xl. Do NOT use text-8xl. Overlines must be uppercase, tiny, wide spacing (tracking-[0.2em]). Gap between heading and subheading must not exceed 2 Tailwind steps."
+  },
+  "colors": {
+    "background": "240 10% 4%",
+    "foreground": "0 0% 98%",
+    "primary": "70 100% 50%",
+    "primary_foreground": "240 10% 4%",
+    "surface": "240 10% 8%",
+    "border": "240 10% 15%",
+    "accent_gradients": [
+      "bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500"
+    ],
+    "rules": "Dark mode default. Never use pure black #000000, use tinted dark gray/blue (zinc-950). Use Neon Yellow (hsl(70 100% 50%)) for primary CTAs like 'Criar meu roteiro' to pop. Use the accent gradient for AI-generated text highlights or borders."
+  },
+  "visual_enhancers": {
+    "glassmorphism": "For sticky headers/floating navs: bg-zinc-950/70 backdrop-blur-xl border-b border-white/10. Must have 1px inner stroke.",
+    "glow_effects": "Use drop-shadows with primary/accent colors for active states (e.g., drop-shadow-[0_0_15px_rgba(212,255,0,0.4)]).",
+    "background_texture": "Subtle noise or grain overlay to remove digital flatness.",
+    "buttons": "Pill-shaped (rounded-full) or aggressive sharp corners. Must have strong hover state (translate-y-[-2px] + intense shadow)."
+  },
+  "grids": {
+    "marketing": "MODE A: TETRIS GRID. Asymmetrical bento grid for features. Use col-span-full md:col-span-8 row-span-2 for hero feature, col-span-4 for supporting. Huge gaps (gap-8 to gap-12).",
+    "dashboard": "MODE B: HIGH DENSITY. Dashboard uses grid-cols-1 md:grid-cols-4. gap-6. Flat backgrounds, 1px subtle border, no shadow."
+  },
+  "components": {
+    "form_generator": "Do not use standard generic forms. Group inputs (Tema, Plataforma, Duração, etc.) in a sleek bento-style card. Use Shadcn Select/Input but style them with bg-zinc-900 border-white/10 focus:border-primary.",
+    "ai_result": "Render the script result (Hook, Cenas, Narração, etc.) in a glowing/gradient-bordered container to emphasize 'AI Magic'.",
+    "pricing_cards": "Use 'Tracing Beam' or glowing border for the R$5/mês Premium plan. Dark UI with stark neon yellow CTA.",
+    "marquee": "Use react-fast-marquee for an 'Editorial Ribbon' of platforms (TikTok, Reels, Shorts) or creator benefits. Slow drift, massive outline text in the background.",
+    "icons": "Use @phosphor-icons/react (Duotone weight) for a high-end app feel. Command: yarn add @phosphor-icons/react"
+  },
+  "layouts": {
+    "spacing": "Generous spacing. p-8, p-12 for containers. py-24, py-32 for marketing sections.",
+    "hero": "Max overlay opacity bg-black/40. Left-aligned content. Big bold Unbounded H1. Primary CTA 'Criar meu roteiro'."
+  },
+  "motion": {
+    "hover": "Hover states must be a lighter hue or have a glow. Always explicitly set hover text color.",
+    "transitions": "Specific transitions: transition-transform duration-300 ease-out, transition-colors duration-200. NEVER use transition-all.",
+    "entrance": "Staggered fade-up for dashboard grid items and marketing features."
+  },
+  "media": {
+    "3d_libraries": "Framer Motion for entrance and hover animations. No heavy 3D required, keep it fast. Alternatively use Phosphor icons with motion.",
+    "image_urls": {
+      "hero_background": {
+        "url": "https://images.unsplash.com/photo-1616588589676-62b3bd4ff6d2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1Mjh8MHwxfHNlYXJjaHwzfHxjb250ZW50JTIwY3JlYXRvciUyMHN0dWRpbyUyMG5lb24lMjBsaWdodGluZ3xlbnwwfHx8fDE3ODgxMTY3ODh8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Gaming workspace with computer and neon signs in purple light (use as dark hero background with overlay)"
+      },
+      "feature_abstract_1": {
+        "url": "https://images.unsplash.com/photo-1671519821564-ced7e41ee7ae?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODF8MHwxfHNlYXJjaHwzfHxhYnN0cmFjdCUyMDNkJTIwZ2VvbWV0cmljJTIwc2hhcGVzJTIwbmVvbiUyMGRhcmt8ZW58MHx8fHwxNzg4MTE2Nzg4fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Floating metallic cubes (use for AI generation visual/feature card)"
+      },
+      "feature_abstract_2": {
+         "url": "https://images.unsplash.com/photo-1657632843433-e6a8b7451ac6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODF8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMDNkJTIwZ2VvbWV0cmljJTIwc2hhcGVzJTIwbmVvbiUyMGRhcmt8ZW58MHx8fHwxNzg4MTE2Nzg4fDA&ixlib=rb-4.1.0&q=85",
+         "description": "Bright red and blue circle (use for analytics/dashboard preview visual)"
+      },
+      "testimonial_avatar": {
+        "url": "https://images.unsplash.com/photo-1613053341085-db794820ce43?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzV8MHwxfHNlYXJjaHwyfHx0aWt0b2slMjBpbmZsdWVuY2VyJTIwcG9ydHJhaXQlMjBuZW9ufGVufDB8fHx8MTc4ODExNjc5Nnww&ixlib=rb-4.1.0&q=85",
+        "description": "Trendy creator portrait for testimonials"
+      }
+    }
+  },
+  "accessibility": {
+    "contrast": "Ensure minimum 4.5:1 ratio. Text over images must have text-shadow.",
+    "focus": "Focus states must be highly visible (e.g., focus:ring-2 focus:ring-primary).",
+    "motion": "Respect prefers-reduced-motion."
+  },
+  "general_ui_ux_guidelines": {
+    "data_testid": "All interactive and key informational elements MUST include a data-testid attribute in kebab-case (e.g., data-testid='generate-script-button').",
+    "toast": "Use sonner for notifications (e.g., 'Roteiro salvo!', 'Link copiado').",
+    "transparent_backgrounds": "CRITICAL: DO NOT use complete transparent background in header, overlays, dropdowns, or any surface that has content under it.",
+    "alignment": "Paragraphs and forms MUST be left-aligned for readability. Do not center-align the app container."
+  },
+  "instructions_to_main_agent": [
+    "Build the application completely in pt-BR (Brazilian Portuguese).",
+    "Use dark mode as the default and primary theme. Force dark mode if necessary by adding the 'dark' class to html.",
+    "Integrate Shadcn UI components but heavily customize their background, borders, and hover states to match the electric/neon dark theme described above.",
+    "Implement the Landing page with the Hero, Como funciona, Benefícios, Exemplos, Preços, FAQ.",
+    "Implement the Dashboard with 'Meus roteiros' (history) and usage stats (Free 5/mês vs Premium 100/mês).",
+    "Implement the Script Generator form with fields: Tema, Plataforma, Duração, Nicho, Estilo, Tom. Use a sleek, tech-forward UI.",
+    "Display the generated script cleanly with sections for: Hook, Roteiro, Cenas, Narração, Prompts de imagem, Título, Descrição, Hashtags, CTA.",
+    "Implement the Admin panel to view users, stats, and revenue.",
+    "Mock the Google Auth flow and Upgrade to Premium flow.",
+    "Do NOT use default Inter font for headings. Apply Unbounded for headings and Manrope for body text via index.css.",
+    "Add 'data-testid' attributes extensively to all interactive elements for testing."
+  ]
+}
