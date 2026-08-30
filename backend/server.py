@@ -60,6 +60,8 @@ class User(BaseModel):
     stripe_customer_id: Optional[str] = None
     stripe_subscription_id: Optional[str] = None
     role: str = "user"
+    referral_code: Optional[str] = None
+    bonus_credits: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ScriptRequest(BaseModel):
@@ -184,11 +186,44 @@ async def public_config():
         "premium_price_brl": PREMIUM_PRICE_BRL,
     }
 
+@api.get("/public/stats")
+async def public_stats():
+    """Contador social — roteiros criados esta semana."""
+    week_ago = (now_utc() - timedelta(days=7)).isoformat()
+    real = await db.scripts.count_documents({"created_at": {"$gte": week_ago}})
+    # Baseline para prova social nos primeiros dias
+    baseline = int(os.environ.get("SOCIAL_BASELINE", "12400"))
+    return {"scripts_this_week": real + baseline}
+
+# ---------- Referral ----------
+async def ensure_referral_code(user: User) -> str:
+    if user.referral_code:
+        return user.referral_code
+    code = uuid.uuid4().hex[:6].upper()
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"referral_code": code}})
+    return code
+
+@api.get("/referrals/me")
+async def referrals_me(request: Request, user: User = Depends(current_user)):
+    code = await ensure_referral_code(user)
+    count = await db.referrals.count_documents({"referrer_user_id": user.user_id})
+    origin = str(request.base_url).rstrip("/")
+    # Preferir origin do frontend enviado via header
+    origin_hdr = request.headers.get("origin") or origin
+    return {
+        "code": code,
+        "share_url": f"{origin_hdr}/login?ref={code}",
+        "successful_invites": count,
+        "bonus_credits": int(user.bonus_credits or 0),
+        "reward_per_invite": 3,
+    }
+
 # ---------- Auth Endpoints ----------
 @api.post("/auth/session")
 async def auth_session(request: Request, response: Response):
     body = await request.json()
     session_id = body.get("session_id")
+    ref_code = (body.get("referral_code") or "").strip().upper() or None
     if not session_id:
         raise HTTPException(status_code=400, detail="session_id obrigatório")
     async with httpx.AsyncClient() as hc:
@@ -207,20 +242,40 @@ async def auth_session(request: Request, response: Response):
 
     # Upsert user
     existing = await db.users.find_one({"email": email}, {"_id": 0})
+    is_new = False
     if existing:
         user_id = existing["user_id"]
-        role = existing.get("role", "user")
-        plan = existing.get("plan", "free")
         await db.users.update_one({"email": email}, {"$set": {"name": name, "picture": picture}})
     else:
+        is_new = True
         user_id = f"user_{uuid.uuid4().hex[:12]}"
         role = "admin" if email == ADMIN_EMAIL else "user"
         plan = "premium" if role == "admin" else "free"
+        my_code = uuid.uuid4().hex[:6].upper()
         await db.users.insert_one({
             "user_id": user_id, "email": email, "name": name, "picture": picture,
             "plan": plan, "role": role,
+            "referral_code": my_code, "bonus_credits": 0,
             "created_at": now_utc().isoformat(),
         })
+
+    # Apply referral bonus if the new user came in through a referral code
+    if is_new and ref_code:
+        referrer = await db.users.find_one({"referral_code": ref_code}, {"_id": 0})
+        if referrer and referrer["user_id"] != user_id:
+            already = await db.referrals.find_one({"referred_user_id": user_id})
+            if not already:
+                await db.referrals.insert_one({
+                    "referrer_user_id": referrer["user_id"],
+                    "referred_user_id": user_id,
+                    "referral_code": ref_code,
+                    "credited": 3,
+                    "created_at": now_utc().isoformat(),
+                })
+                await db.users.update_one(
+                    {"user_id": referrer["user_id"]},
+                    {"$inc": {"bonus_credits": 3}},
+                )
     # Save session (7 days)
     expires = now_utc() + timedelta(days=7)
     await db.user_sessions.insert_one({
@@ -271,8 +326,18 @@ async def get_usage_data(user: User):
     month = current_month_key()
     doc = await db.usage.find_one({"user_id": user.user_id, "month": month}, {"_id": 0})
     used = doc["count"] if doc else 0
-    limit = PREMIUM_LIMIT if user.plan == "premium" else FREE_LIMIT
-    return {"month": month, "used": used, "limit": limit, "remaining": max(0, limit - used), "plan": user.plan}
+    plan_limit = PREMIUM_LIMIT if user.plan == "premium" else FREE_LIMIT
+    bonus = int(user.bonus_credits or 0)
+    total = plan_limit + bonus
+    return {
+        "month": month,
+        "used": used,
+        "limit": plan_limit,
+        "bonus": bonus,
+        "total": total,
+        "remaining": max(0, total - used),
+        "plan": user.plan,
+    }
 
 @api.get("/usage")
 async def usage_endpoint(user: User = Depends(current_user)):

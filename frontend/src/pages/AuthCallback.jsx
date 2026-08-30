@@ -24,7 +24,11 @@ export default function AuthCallback() {
 
     (async () => {
       try {
-        const { data } = await api.post("/auth/session", { session_id: sessionId });
+        const ref = localStorage.getItem("roteira_ref");
+        const payload = { session_id: sessionId };
+        if (ref) payload.referral_code = ref;
+        const { data } = await api.post("/auth/session", payload);
+        if (ref) localStorage.removeItem("roteira_ref");
         if (data.session_token) localStorage.setItem("roteira_token", data.session_token);
         window.history.replaceState({}, "", "/dashboard");
         await refresh();

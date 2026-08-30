@@ -4,19 +4,30 @@ import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Progress } from "../components/ui/progress";
-import { Sparkle, Plus, Clock, Crown, ArrowRight } from "@phosphor-icons/react";
+import { toast } from "sonner";
+import { Sparkle, Plus, Clock, Crown, ArrowRight, Copy, Gift } from "@phosphor-icons/react";
 
 export default function Dashboard() {
   const { user, usage, refresh } = useAuth();
   const [scripts, setScripts] = useState([]);
+  const [referral, setReferral] = useState(null);
 
   useEffect(() => {
     refresh();
     api.get("/scripts").then(({ data }) => setScripts(data.scripts || []));
+    api.get("/referrals/me").then(({ data }) => setReferral(data)).catch(() => {});
   }, []); // eslint-disable-line
 
   if (!user || !usage) return null;
-  const pct = Math.min(100, (usage.used / usage.limit) * 100);
+  const pct = Math.min(100, (usage.used / (usage.total || usage.limit)) * 100);
+
+  const copyShare = async () => {
+    if (!referral?.share_url) return;
+    try {
+      await navigator.clipboard.writeText(referral.share_url);
+      toast.success("Link de indicação copiado!");
+    } catch { toast.error("Não foi possível copiar."); }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-12" data-testid="dashboard-page">
@@ -41,11 +52,14 @@ export default function Dashboard() {
             <span className="text-xs text-zinc-500">{usage.month}</span>
           </div>
           <div className="mt-4 flex items-end justify-between">
-            <div className="font-display text-5xl font-black">{usage.used}<span className="text-zinc-600 text-3xl">/{usage.limit}</span></div>
+            <div className="font-display text-5xl font-black">{usage.used}<span className="text-zinc-600 text-3xl">/{usage.total || usage.limit}</span></div>
             <div className="text-right text-sm text-zinc-400">Restam <b className="text-primary">{usage.remaining}</b> roteiros</div>
           </div>
           <Progress value={pct} className="mt-4 bg-white/5 h-2" />
-          <p className="mt-3 text-sm text-zinc-500">Você usou {usage.used} de {usage.limit} roteiros este mês.</p>
+          <p className="mt-3 text-sm text-zinc-500">
+            Você usou {usage.used} de {usage.total || usage.limit} roteiros este mês.
+            {usage.bonus > 0 && <> Inclui <b className="text-primary">+{usage.bonus} bônus</b> por indicações.</>}
+          </p>
         </div>
 
         <div className="rounded-2xl bg-zinc-900/60 border border-white/10 p-6" data-testid="plan-card">
@@ -67,6 +81,32 @@ export default function Dashboard() {
           <div className="font-display text-4xl font-black mt-3">{scripts.length}</div>
           <div className="text-sm text-zinc-500 mt-1">no total</div>
         </div>
+      </div>
+
+      <div className="mt-10 rounded-2xl bg-zinc-900/60 border border-white/10 p-6 md:p-8 flex flex-col md:flex-row md:items-center gap-6" data-testid="referral-card">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 text-primary text-xs uppercase tracking-widest font-semibold">
+            <Gift weight="duotone" size={18} /> Indique amigos, ganhe roteiros
+          </div>
+          <h3 className="mt-2 font-display text-xl font-bold">
+            Ganhe <span className="text-primary">+3 roteiros</span> a cada amigo que criar conta.
+          </h3>
+          <p className="text-sm text-zinc-400 mt-1">
+            {referral ? (
+              <>Você já convidou <b className="text-white">{referral.successful_invites}</b> pessoa(s) — bônus acumulado: <b className="text-primary">+{referral.bonus_credits}</b> roteiros.</>
+            ) : "Carregando..."}
+          </p>
+        </div>
+        {referral && (
+          <div className="flex items-center gap-2 shrink-0">
+            <code className="px-3 py-2 rounded-lg bg-zinc-950 border border-white/10 text-primary font-mono text-sm tracking-wider" data-testid="referral-code">
+              {referral.code}
+            </code>
+            <Button size="sm" onClick={copyShare} className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 font-semibold" data-testid="copy-referral-btn">
+              <Copy size={14} className="mr-1" /> Copiar link
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="mt-16">

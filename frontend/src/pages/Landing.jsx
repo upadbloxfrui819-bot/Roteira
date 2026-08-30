@@ -1,9 +1,21 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "../components/ui/button";
-import { ArrowRight } from "@phosphor-icons/react";
+import { ArrowRight, Users } from "@phosphor-icons/react";
+import { api } from "../lib/api";
+
+const formatK = (n) => {
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(".0", "") + "k";
+  return String(n);
+};
 
 export default function Landing() {
+  const [stats, setStats] = useState(null);
+
+  useEffect(() => {
+    api.get("/public/stats").then(({ data }) => setStats(data)).catch(() => {});
+  }, []);
+
   return (
     <div
       className="grid-bg min-h-[calc(100vh-73px)] flex items-center justify-center px-6"
@@ -50,6 +62,18 @@ export default function Landing() {
             </Button>
           </Link>
         </div>
+
+        {stats && (
+          <div
+            className="mt-6 flex items-center justify-center gap-2 text-sm text-zinc-500"
+            data-testid="social-counter"
+          >
+            <Users weight="duotone" size={16} className="text-primary" />
+            <span>
+              <span className="text-white font-semibold">{formatK(stats.scripts_this_week)}</span> roteiros criados esta semana
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
