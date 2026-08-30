@@ -24,7 +24,22 @@ export default function Landing() {
           Transforme qualquer ideia em um roteiro pronto para TikTok, Reels e Shorts.
         </p>
 
-        <div className="mt-12">
+        <div
+          className="mt-10 mx-auto max-w-lg text-left rounded-xl border border-white/10 bg-white/[0.02] px-5 py-4"
+          data-testid="landing-preview"
+        >
+          <div className="text-[10px] tracking-[0.2em] uppercase text-primary font-semibold">
+            Prévia do roteiro
+          </div>
+          <p className="mt-2 text-white leading-relaxed text-sm md:text-base">
+            "Você nunca vai olhar para o seu celular do mesmo jeito depois disso…"
+          </p>
+          <p className="mt-1 text-zinc-500 leading-relaxed text-sm md:text-base">
+            Cena 1 — Close no celular vibrando. Narração: "Olha o que a IA descobriu…"
+          </p>
+        </div>
+
+        <div className="mt-10">
           <Link to="/login" data-testid="landing-cta">
             <Button
               size="lg"
