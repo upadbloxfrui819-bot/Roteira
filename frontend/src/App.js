@@ -12,7 +12,6 @@ import Generate from "./pages/Generate";
 import History from "./pages/History";
 import Pricing from "./pages/Pricing";
 import Admin from "./pages/Admin";
-import { PaymentSuccess, PaymentCancel } from "./pages/PaymentResult";
 
 const Protected = ({ children, admin }) => {
   const { user, loading } = useAuth();
@@ -37,8 +36,6 @@ function AppRouter() {
           <Route path="/generate" element={<Protected><Generate /></Protected>} />
           <Route path="/history" element={<Protected><History /></Protected>} />
           <Route path="/admin" element={<Protected admin><Admin /></Protected>} />
-          <Route path="/payment/success" element={<PaymentSuccess />} />
-          <Route path="/payment/cancel" element={<PaymentCancel />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

@@ -7,7 +7,7 @@
 - **Backend:** FastAPI + Motor (MongoDB async)
 - **IA:** OpenAI GPT-5.6 (via Emergent LLM Key universal)
 - **Auth:** Emergent Google OAuth + JWT para admin
-- **Pagamentos:** Stripe (via Emergent Payments Sandbox)
+- **Pagamentos:** PIX manual + Códigos de ativação (sem intermediários, sem taxas, sem 18+)
 
 ---
 
@@ -26,10 +26,20 @@
 | Item | Status | Ação |
 |------|--------|------|
 | Chave IA (`EMERGENT_LLM_KEY`) | Pré-injetada, funciona | Nenhuma. Para trocar, edite `backend/.env` |
-| Stripe test | Pré-injetada (`sk_test_emergent`) | Nenhuma para testar |
-| Stripe produção (recorrência real) | Precisa reivindicar sandbox no painel Emergent | Peça ao agente: "reivindicar minha sandbox Stripe" para gerar o link `onboarding_url` |
-| Webhook Stripe | Configurado em `/api/webhook/stripe` | Se rodar em servidor próprio, configurar no dashboard Stripe |
-| Email (recuperação de senha) | Não implementado (Google Auth não precisa) | — |
+| Chave PIX | Configurada em `.env` (`PIX_KEY=81999999577`) | Troque se quiser, sem impacto no código |
+| Recuperação de senha (email) | Não implementado (Google Auth não precisa) | — |
+
+## 💰 Como funciona o pagamento (PIX manual)
+1. Usuário clica "Pagar com PIX" na página de preços
+2. Sistema mostra sua chave PIX e valor (R$ 5,00)
+3. Usuário paga e cola o **ID da transação (E2E)** no formulário
+4. Admin recebe a solicitação em `/admin` → aba **Pagamentos PIX**
+5. Admin clica **Aprovar** → sistema gera um código `ROTEIRA-XXXXXXXX` único
+6. Admin copia o código e envia ao usuário (WhatsApp/email)
+7. Usuário insere o código em "Já tenho um código" na página de preços
+8. Premium ativado automaticamente por 30 dias ✅
+
+Você também pode gerar códigos manualmente pela aba **Códigos de ativação** — útil para amigos, parceiros ou promoções.
 
 ---
 

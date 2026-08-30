@@ -17,9 +17,6 @@ from pydantic import BaseModel, Field, EmailStr
 import httpx
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage
-from emergentintegrations.payments.stripe.checkout import (
-    StripeCheckout, CheckoutSessionRequest, CheckoutSessionResponse, CheckoutStatusResponse
-)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -39,9 +36,11 @@ JWT_SECRET = os.environ["JWT_SECRET"]
 FREE_LIMIT = int(os.environ.get("FREE_MONTHLY_LIMIT", "5"))
 PREMIUM_LIMIT = int(os.environ.get("PREMIUM_MONTHLY_LIMIT", "100"))
 PREMIUM_PRICE_BRL = float(os.environ.get("PREMIUM_PRICE_BRL", "5"))
+PREMIUM_DAYS = int(os.environ.get("PREMIUM_DAYS", "30"))
 
-STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "sk_test_emergent")
-STRIPE_ENABLE_PIX = os.environ.get("STRIPE_ENABLE_PIX", "false").lower() == "true"
+PIX_KEY = os.environ.get("PIX_KEY", "")
+PIX_KEY_TYPE = os.environ.get("PIX_KEY_TYPE", "Celular")
+PIX_HOLDER_NAME = os.environ.get("PIX_HOLDER_NAME", "Roteira")
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -94,8 +93,8 @@ class ScriptDoc(BaseModel):
     result: dict
     created_at: datetime
 
-class CheckoutRequest(BaseModel):
-    origin_url: str
+class CodeRedeemBody(BaseModel):
+    code: str
 
 # ---------- Helpers ----------
 def now_utc():
@@ -104,11 +103,6 @@ def now_utc():
 def current_month_key():
     n = now_utc()
     return f"{n.year:04d}-{n.month:02d}"
-
-def stripe_client(request: Request) -> StripeCheckout:
-    host_url = str(request.base_url)
-    webhook_url = f"{host_url.rstrip('/')}/api/webhook/stripe"
-    return StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
 
 # ---------- Auth ----------
 async def current_user(
@@ -458,110 +452,129 @@ async def delete_script(sid: str, user: User = Depends(current_user)):
         raise HTTPException(status_code=404, detail="Roteiro não encontrado")
     return {"ok": True}
 
-# ---------- Stripe (Emergent Payments Sandbox) ----------
-# NOTA: assinatura mensal recorrente exige uma conta Stripe reivindicada.
-# Nesta versão usamos pagamento único de R$5 que ativa Premium por 30 dias.
-# Para recorrência real, siga o passo de "onboarding_url" no README.
+# ---------- PIX manual + Códigos de ativação ----------
 
-@api.post("/payments/checkout")
-async def create_checkout(req: CheckoutRequest, request: Request, user: User = Depends(current_user)):
-    checkout = stripe_client(request)
-    origin = req.origin_url.rstrip("/")
-    payment_methods = ["card", "pix"] if STRIPE_ENABLE_PIX else ["card"]
-    session_req = CheckoutSessionRequest(
-        amount=float(PREMIUM_PRICE_BRL),
-        currency="brl",
-        success_url=f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
-        cancel_url=f"{origin}/payment/cancel",
-        metadata={"user_id": user.user_id, "email": user.email, "product": "roteira_premium"},
-        payment_methods=payment_methods,
+class PixSubmitBody(BaseModel):
+    transaction_id: str
+    comprovante: Optional[str] = None  # texto livre / observação
+
+def _activate_premium(user_id: str, days: int = None):
+    exp = (now_utc() + timedelta(days=days or PREMIUM_DAYS)).isoformat()
+    return db.users.update_one(
+        {"user_id": user_id},
+        {"$set": {"plan": "premium", "subscription_status": "active", "premium_until": exp}},
     )
-    try:
-        session: CheckoutSessionResponse = await checkout.create_checkout_session(session_req)
-    except Exception as e:
-        logger.exception("Stripe checkout error")
-        raise HTTPException(status_code=500, detail=f"Erro ao criar checkout: {e}")
 
-    await db.payment_transactions.insert_one({
-        "session_id": session.session_id,
-        "user_id": user.user_id,
-        "amount": PREMIUM_PRICE_BRL,
-        "currency": "brl",
-        "status": "initiated",
-        "payment_status": "pending",
-        "created_at": now_utc().isoformat(),
-        "updated_at": now_utc().isoformat(),
-    })
-    return {"checkout_url": session.url, "session_id": session.session_id}
+def _new_activation_code() -> str:
+    return "ROTEIRA-" + uuid.uuid4().hex[:8].upper()
 
-async def _mark_paid(session_id: str, status_obj):
-    record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
-    if not record or record.get("payment_status") == "paid":
-        return record
-    await db.payment_transactions.update_one(
-        {"session_id": session_id, "payment_status": {"$ne": "paid"}},
-        {"$set": {
-            "status": "completed",
-            "payment_status": "paid",
-            "updated_at": now_utc().isoformat(),
-        }},
-    )
-    if record.get("user_id"):
-        expires = (now_utc() + timedelta(days=30)).isoformat()
-        await db.users.update_one(
-            {"user_id": record["user_id"]},
-            {"$set": {"plan": "premium", "subscription_status": "active",
-                      "premium_until": expires}},
-        )
-    return await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
-
-@api.get("/payments/status/{session_id}")
-async def payment_status(session_id: str, request: Request):
-    record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
-    if not record:
-        raise HTTPException(status_code=404, detail="Transação não encontrada")
-    if record.get("payment_status") != "paid":
-        try:
-            checkout = stripe_client(request)
-            status: CheckoutStatusResponse = await checkout.get_checkout_status(session_id)
-            if status.payment_status == "paid" or status.status == "complete":
-                record = await _mark_paid(session_id, status)
-        except Exception:
-            pass
+@api.get("/payments/pix-info")
+async def pix_info():
     return {
-        "session_id": record["session_id"],
-        "status": record["status"],
-        "payment_status": record["payment_status"],
+        "price_brl": PREMIUM_PRICE_BRL,
+        "days": PREMIUM_DAYS,
+        "pix_key": PIX_KEY,
+        "pix_key_type": PIX_KEY_TYPE,
+        "holder_name": PIX_HOLDER_NAME,
     }
 
-@api.post("/webhook/stripe")
-async def stripe_webhook(request: Request):
-    body = await request.body()
-    sig = request.headers.get("Stripe-Signature", "")
-    checkout = stripe_client(request)
-    try:
-        resp = await checkout.handle_webhook(body, sig)
-    except Exception as e:
-        logger.warning("Webhook error: %s", e)
-        raise HTTPException(status_code=400, detail="Webhook inválido")
-    if resp.payment_status == "paid":
-        await _mark_paid(resp.session_id, resp)
-    return {"received": True}
+@api.post("/payments/pix-submit")
+async def pix_submit(body: PixSubmitBody, user: User = Depends(current_user)):
+    tid = body.transaction_id.strip()
+    if len(tid) < 4:
+        raise HTTPException(status_code=400, detail="ID da transação muito curto")
+    doc = {
+        "id": f"pix_{uuid.uuid4().hex[:12]}",
+        "user_id": user.user_id,
+        "user_email": user.email,
+        "user_name": user.name,
+        "transaction_id": tid,
+        "comprovante": body.comprovante or "",
+        "status": "pending",
+        "amount": PREMIUM_PRICE_BRL,
+        "activation_code": None,
+        "created_at": now_utc().isoformat(),
+    }
+    await db.pix_payments.insert_one(doc)
+    doc.pop("_id", None)
+    return {"payment": doc}
+
+@api.get("/payments/pix-my")
+async def pix_my(user: User = Depends(current_user)):
+    docs = await db.pix_payments.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    return {"payments": docs}
+
+@api.post("/codes/redeem")
+async def redeem_code(body: CodeRedeemBody, user: User = Depends(current_user)):
+    code = body.code.strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="Código obrigatório")
+    doc = await db.activation_codes.find_one({"code": code}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Código inválido")
+    if doc.get("redeemed_by"):
+        raise HTTPException(status_code=409, detail="Este código já foi utilizado")
+    days = int(doc.get("days") or PREMIUM_DAYS)
+    await db.activation_codes.update_one(
+        {"code": code, "redeemed_by": None},
+        {"$set": {"redeemed_by": user.user_id, "redeemed_email": user.email,
+                  "redeemed_at": now_utc().isoformat()}},
+    )
+    await _activate_premium(user.user_id, days=days)
+    return {"ok": True, "days": days, "plan": "premium"}
+
+# ---------- Visits (contador simples) ----------
+def _day_key():
+    n = now_utc()
+    return f"{n.year:04d}-{n.month:02d}-{n.day:02d}"
+
+@api.post("/track/visit")
+async def track_visit():
+    day = _day_key()
+    await db.visits.update_one({"day": day}, {"$inc": {"count": 1},
+                                              "$setOnInsert": {"day": day}},
+                               upsert=True)
+    return {"ok": True}
 
 # ---------- Admin ----------
+class AdminCreateCodeBody(BaseModel):
+    days: int = 30
+    quantity: int = 1
+    note: Optional[str] = None
+
+class AdminApproveBody(BaseModel):
+    payment_id: str
+    days: int = 30
+
 @api.get("/admin/stats")
 async def admin_stats(_: User = Depends(admin_required)):
     total_users = await db.users.count_documents({})
     premium_users = await db.users.count_documents({"plan": "premium"})
     total_scripts = await db.scripts.count_documents({})
-    paid = await db.payment_transactions.count_documents({"payment_status": "paid"})
+    paid = await db.pix_payments.count_documents({"status": "approved"})
+    redeemed = await db.activation_codes.count_documents({"redeemed_by": {"$ne": None}})
     revenue = paid * PREMIUM_PRICE_BRL
+    pending_pix = await db.pix_payments.count_documents({"status": "pending"})
+    # Visits
+    today = _day_key()
+    today_doc = await db.visits.find_one({"day": today}, {"_id": 0})
+    visits_today = today_doc["count"] if today_doc else 0
+    week_ago = (now_utc() - timedelta(days=7)).strftime("%Y-%m-%d")
+    week_docs = await db.visits.find({"day": {"$gte": week_ago}}, {"_id": 0}).to_list(30)
+    visits_week = sum(d.get("count", 0) for d in week_docs)
+    all_docs = await db.visits.find({}, {"_id": 0}).to_list(1000)
+    visits_total = sum(d.get("count", 0) for d in all_docs)
     return {
         "total_users": total_users,
         "premium_users": premium_users,
         "total_scripts": total_scripts,
         "paid_transactions": paid,
+        "redeemed_codes": redeemed,
+        "pending_pix": pending_pix,
         "revenue_brl": revenue,
+        "visits_today": visits_today,
+        "visits_week": visits_week,
+        "visits_total": visits_total,
     }
 
 @api.get("/admin/users")
@@ -572,6 +585,77 @@ async def admin_users(_: User = Depends(admin_required)):
         usage = await db.usage.find_one({"user_id": u["user_id"], "month": m}, {"_id": 0})
         u["month_usage"] = usage["count"] if usage else 0
     return {"users": users}
+
+@api.get("/admin/pix")
+async def admin_pix_list(status: Optional[str] = None, _: User = Depends(admin_required)):
+    q = {}
+    if status:
+        q["status"] = status
+    docs = await db.pix_payments.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {"payments": docs}
+
+@api.post("/admin/pix/approve")
+async def admin_pix_approve(body: AdminApproveBody, _: User = Depends(admin_required)):
+    p = await db.pix_payments.find_one({"id": body.payment_id}, {"_id": 0})
+    if not p:
+        raise HTTPException(status_code=404, detail="Pagamento não encontrado")
+    if p.get("status") == "approved":
+        return {"ok": True, "payment": p}
+    code = _new_activation_code()
+    await db.activation_codes.insert_one({
+        "code": code,
+        "days": int(body.days or PREMIUM_DAYS),
+        "created_by": "admin",
+        "source": "pix_approval",
+        "pix_payment_id": p["id"],
+        "redeemed_by": None,
+        "redeemed_email": None,
+        "redeemed_at": None,
+        "created_at": now_utc().isoformat(),
+    })
+    await db.pix_payments.update_one(
+        {"id": body.payment_id},
+        {"$set": {"status": "approved", "activation_code": code,
+                  "approved_at": now_utc().isoformat(),
+                  "days": int(body.days or PREMIUM_DAYS)}},
+    )
+    p = await db.pix_payments.find_one({"id": body.payment_id}, {"_id": 0})
+    return {"ok": True, "payment": p, "code": code}
+
+@api.post("/admin/pix/reject")
+async def admin_pix_reject(body: AdminApproveBody, _: User = Depends(admin_required)):
+    r = await db.pix_payments.update_one(
+        {"id": body.payment_id},
+        {"$set": {"status": "rejected", "rejected_at": now_utc().isoformat()}},
+    )
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Pagamento não encontrado")
+    return {"ok": True}
+
+@api.get("/admin/codes")
+async def admin_codes_list(_: User = Depends(admin_required)):
+    docs = await db.activation_codes.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {"codes": docs}
+
+@api.post("/admin/codes/create")
+async def admin_codes_create(body: AdminCreateCodeBody, _: User = Depends(admin_required)):
+    qty = max(1, min(int(body.quantity or 1), 50))
+    created = []
+    for _i in range(qty):
+        code = _new_activation_code()
+        await db.activation_codes.insert_one({
+            "code": code,
+            "days": int(body.days or PREMIUM_DAYS),
+            "created_by": "admin",
+            "source": "manual",
+            "note": body.note or "",
+            "redeemed_by": None,
+            "redeemed_email": None,
+            "redeemed_at": None,
+            "created_at": now_utc().isoformat(),
+        })
+        created.append(code)
+    return {"codes": created}
 
 # ---------- Mount ----------
 app.include_router(api)

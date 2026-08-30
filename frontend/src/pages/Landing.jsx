@@ -14,6 +14,11 @@ export default function Landing() {
 
   useEffect(() => {
     api.get("/public/stats").then(({ data }) => setStats(data)).catch(() => {});
+    // Contabiliza visita (apenas uma vez por sessão)
+    if (!sessionStorage.getItem("roteira_visited")) {
+      api.post("/track/visit").catch(() => {});
+      sessionStorage.setItem("roteira_visited", "1");
+    }
   }, []);
 
   return (
