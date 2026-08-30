@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/
 import { toast } from "sonner";
 import {
   Users, CurrencyCircleDollar, FileText, Crown, Eye,
-  QrCode, Ticket, CheckCircle, XCircle, Copy, Plus, Clock
+  QrCode, Ticket, CheckCircle, XCircle, Copy, Plus, Clock, Bell, BellSlash
 } from "@phosphor-icons/react";
 
 export default function Admin() {
@@ -20,16 +20,63 @@ export default function Admin() {
   const [showCreate, setShowCreate] = useState(false);
   const [createQty, setCreateQty] = useState(1);
   const [createDays, setCreateDays] = useState(30);
+  const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem("roteira_admin_sound") !== "0");
+  const lastPendingRef = useRef(null);
 
-  const load = async () => {
+  // "Sino" via Web Audio API — sem arquivos externos
+  const ringBell = () => {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      const ctx = new AC();
+      const notes = [880, 1320, 1760];
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.15);
+        gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + i * 0.15 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.15 + 0.35);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(ctx.currentTime + i * 0.15);
+        osc.stop(ctx.currentTime + i * 0.15 + 0.4);
+      });
+      setTimeout(() => ctx.close?.(), 1500);
+    } catch {}
+  };
+
+  const load = async (isPoll = false) => {
     const [s, u, p, c] = await Promise.all([
       api.get("/admin/stats"), api.get("/admin/users"),
       api.get("/admin/pix"), api.get("/admin/codes"),
     ]);
     setStats(s.data); setUsers(u.data.users || []);
     setPix(p.data.payments || []); setCodes(c.data.codes || []);
+
+    // Detecta novos PIX pendentes e toca o sino
+    const currentPending = s.data.pending_pix || 0;
+    if (isPoll && lastPendingRef.current !== null && currentPending > lastPendingRef.current) {
+      if (soundEnabled) ringBell();
+      toast.info(`🔔 Novo PIX pendente! (${currentPending} no total)`);
+    }
+    lastPendingRef.current = currentPending;
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load(false);
+    const id = setInterval(() => load(true), 20000);
+    return () => clearInterval(id);
+  }, [soundEnabled]); // eslint-disable-line
+
+  const toggleSound = () => {
+    setSoundEnabled(v => {
+      const n = !v;
+      localStorage.setItem("roteira_admin_sound", n ? "1" : "0");
+      toast.success(n ? "Sino ativado" : "Sino silenciado");
+      if (n) ringBell();
+      return n;
+    });
+  };
 
   const approve = async (id) => {
     setApproving(id);
@@ -81,8 +128,21 @@ export default function Admin() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-12" data-testid="admin-page">
-      <span className="text-xs tracking-[0.2em] uppercase text-primary">Admin</span>
-      <h1 className="font-display text-4xl md:text-5xl font-black tracking-tighter mt-2">Painel Roteira</h1>
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <span className="text-xs tracking-[0.2em] uppercase text-primary">Admin</span>
+          <h1 className="font-display text-4xl md:text-5xl font-black tracking-tighter mt-2">Painel Roteira</h1>
+        </div>
+        <Button
+          onClick={toggleSound}
+          variant="outline"
+          className="rounded-full border-white/15 hover:bg-white/5"
+          data-testid="toggle-sound-btn"
+        >
+          {soundEnabled ? (<><Bell weight="fill" size={16} className="mr-2 text-primary" /> Sino ativo</>)
+                        : (<><BellSlash size={16} className="mr-2" /> Sino silenciado</>)}
+        </Button>
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-10">
         {statCards.map((c) => (

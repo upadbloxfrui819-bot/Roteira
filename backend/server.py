@@ -18,6 +18,7 @@ import httpx
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 from pix_brcode import build_pix_payload
+from emailer import send_email, render_activation_email, render_admin_pix_alert, is_configured as email_configured
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -43,6 +44,8 @@ PIX_KEY = os.environ.get("PIX_KEY", "")
 PIX_KEY_TYPE = os.environ.get("PIX_KEY_TYPE", "Celular")
 PIX_HOLDER_NAME = os.environ.get("PIX_HOLDER_NAME", "Roteira")
 PIX_CITY = os.environ.get("PIX_CITY", "RECIFE")
+ADMIN_NOTIFY_EMAIL = os.environ.get("ADMIN_NOTIFY_EMAIL", os.environ.get("ADMIN_EMAIL", ""))
+APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "")
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -514,6 +517,18 @@ async def pix_submit(body: PixSubmitBody, user: User = Depends(current_user)):
     }
     await db.pix_payments.insert_one(doc)
     doc.pop("_id", None)
+
+    # Notifica admin por email (não bloqueia — degrada silenciosamente sem chave)
+    if ADMIN_NOTIFY_EMAIL:
+        try:
+            html = render_admin_pix_alert({
+                **doc,
+                "admin_url": f"{APP_PUBLIC_URL}/admin" if APP_PUBLIC_URL else "/admin",
+            })
+            await send_email(to=ADMIN_NOTIFY_EMAIL, subject="🔔 Novo PIX pendente — Roteira", html=html)
+        except Exception as e:
+            logger.warning("admin alert email failed: %s", e)
+
     return {"payment": doc}
 
 @api.get("/payments/pix-my")
@@ -638,6 +653,21 @@ async def admin_pix_approve(body: AdminApproveBody, _: User = Depends(admin_requ
                   "days": int(body.days or PREMIUM_DAYS)}},
     )
     p = await db.pix_payments.find_one({"id": body.payment_id}, {"_id": 0})
+
+    # Envia código por email ao usuário (se Resend configurado)
+    try:
+        pub_origin = APP_PUBLIC_URL or ""
+        redeem_url = f"{pub_origin}/pricing" if pub_origin else "/pricing"
+        html = render_activation_email(
+            name=p.get("user_name") or "criador",
+            code=code,
+            days=int(body.days or PREMIUM_DAYS),
+            redeem_url=redeem_url,
+        )
+        await send_email(to=p["user_email"], subject="🎉 Seu código Premium do Roteira", html=html)
+    except Exception as e:
+        logger.warning("activation email failed: %s", e)
+
     return {"ok": True, "payment": p, "code": code}
 
 @api.post("/admin/pix/reject")

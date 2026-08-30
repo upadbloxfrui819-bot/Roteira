@@ -12,6 +12,7 @@ import Generate from "./pages/Generate";
 import History from "./pages/History";
 import Pricing from "./pages/Pricing";
 import Admin from "./pages/Admin";
+import { Terms, Privacy } from "./pages/Legal";
 
 const Protected = ({ children, admin }) => {
   const { user, loading } = useAuth();
@@ -36,6 +37,8 @@ function AppRouter() {
           <Route path="/generate" element={<Protected><Generate /></Protected>} />
           <Route path="/history" element={<Protected><History /></Protected>} />
           <Route path="/admin" element={<Protected admin><Admin /></Protected>} />
+          <Route path="/termos" element={<Terms />} />
+          <Route path="/privacidade" element={<Privacy />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

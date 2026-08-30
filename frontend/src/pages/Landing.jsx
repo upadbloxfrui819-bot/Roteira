@@ -79,6 +79,14 @@ export default function Landing() {
             </span>
           </div>
         )}
+
+        <div className="mt-16 flex items-center justify-center gap-6 text-xs text-zinc-600">
+          <Link to="/termos" className="hover:text-white transition-colors" data-testid="footer-terms">Termos</Link>
+          <span className="text-zinc-800">·</span>
+          <Link to="/privacidade" className="hover:text-white transition-colors" data-testid="footer-privacy">Privacidade</Link>
+          <span className="text-zinc-800">·</span>
+          <Link to="/pricing" className="hover:text-white transition-colors" data-testid="footer-pricing">Preços</Link>
+        </div>
       </div>
     </div>
   );
