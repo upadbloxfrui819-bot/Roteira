@@ -707,14 +707,30 @@ async def admin_codes_create(body: AdminCreateCodeBody, _: User = Depends(admin_
 
 # ---------- Mount ----------
 app.include_router(api)
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=["*"],
-    allow_origin_regex=".*",
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+# CORS: quando allow_credentials=True, o navegador REJEITA "*".
+# Precisamos ecoar o Origin de volta — allow_origin_regex faz isso e não pode
+# coexistir com allow_origins=["*"]. Suporta lista via CORS_ORIGINS (comma-sep).
+_cors_env = os.environ.get("CORS_ORIGINS", "*").strip()
+if _cors_env == "*" or not _cors_env:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_credentials=True,
+        allow_origin_regex=".*",
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
+else:
+    origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_credentials=True,
+        allow_origins=origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
 
 @app.on_event("shutdown")
 async def shutdown():
