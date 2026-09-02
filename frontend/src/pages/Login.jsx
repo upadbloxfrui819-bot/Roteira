@@ -1,40 +1,149 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { GoogleLogo, ShieldCheck } from "@phosphor-icons/react";
+import { ShieldCheck } from "@phosphor-icons/react";
 import { Logo } from "../components/Logo";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { toast } from "sonner";
 
+const GOOGLE_SCRIPT_ID = "google-identity-services";
+
 export default function Login() {
   const navigate = useNavigate();
   const { refresh } = useAuth();
+  const googleButtonRef = useRef(null);
 
   const [showAdmin, setShowAdmin] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleReady, setGoogleReady] = useState(false);
 
-  const handleGoogle = () => {
-    // Preserva o código de indicação, se houver
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get("ref");
 
     if (ref) {
       localStorage.setItem("roteira_ref", ref.toUpperCase());
     }
+  }, []);
 
-    // Google volta para AuthCallback, que processa o session_id
-    const redirectUrl = window.location.origin + "/auth/callback";
+  useEffect(() => {
+    const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 
-    window.location.href =
-      `https://auth.emergentagent.com/?redirect=${encodeURIComponent(
-        redirectUrl
-      )}`;
-  };
+    if (!clientId) {
+      console.error("REACT_APP_GOOGLE_CLIENT_ID não configurado.");
+      toast.error("Login Google ainda não foi configurado.");
+      return;
+    }
+
+    let cancelled = false;
+
+    const handleCredentialResponse = async (response) => {
+      if (!response?.credential) {
+        toast.error("Não foi possível receber o login do Google.");
+        return;
+      }
+
+      setLoading(true);
+
+      try {
+        const referralCode =
+          localStorage.getItem("roteira_ref") || undefined;
+
+        const { data } = await api.post("/auth/session", {
+          credential: response.credential,
+          referral_code: referralCode,
+        });
+
+        if (data?.session_token) {
+          localStorage.setItem("roteira_token", data.session_token);
+        }
+
+        localStorage.removeItem("roteira_ref");
+
+        await refresh();
+
+        toast.success("Login realizado com sucesso!");
+        navigate("/dashboard", { replace: true });
+      } catch (err) {
+        console.error("Erro no login Google:", err);
+        toast.error(
+          err?.response?.data?.detail ||
+            "Não foi possível entrar com o Google."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const initializeGoogle = () => {
+      if (
+        cancelled ||
+        !window.google?.accounts?.id ||
+        !googleButtonRef.current
+      ) {
+        return;
+      }
+
+      try {
+        window.google.accounts.id.initialize({
+          client_id: clientId,
+          callback: handleCredentialResponse,
+          auto_select: false,
+          cancel_on_tap_outside: true,
+        });
+
+        googleButtonRef.current.innerHTML = "";
+
+        window.google.accounts.id.renderButton(
+          googleButtonRef.current,
+          {
+            type: "standard",
+            theme: "outline",
+            size: "large",
+            text: "continue_with",
+            shape: "pill",
+            logo_alignment: "left",
+            width: 380,
+          }
+        );
+
+        setGoogleReady(true);
+      } catch (err) {
+        console.error("Erro ao iniciar Google Identity Services:", err);
+        toast.error("Não foi possível carregar o login do Google.");
+      }
+    };
+
+    if (window.google?.accounts?.id) {
+      initializeGoogle();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    let script = document.getElementById(GOOGLE_SCRIPT_ID);
+
+    if (!script) {
+      script = document.createElement("script");
+      script.id = GOOGLE_SCRIPT_ID;
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    script.addEventListener("load", initializeGoogle);
+
+    return () => {
+      cancelled = true;
+      script?.removeEventListener("load", initializeGoogle);
+    };
+  }, [navigate, refresh]);
 
   const handleAdmin = async (e) => {
     e.preventDefault();
@@ -82,15 +191,21 @@ export default function Login() {
             Use sua conta Google. Rápido, seguro e sem senha.
           </p>
 
-          <Button
-            onClick={handleGoogle}
-            size="lg"
-            className="w-full rounded-full bg-white text-black hover:bg-zinc-200 font-semibold"
-            data-testid="google-login-btn"
-          >
-            <GoogleLogo weight="bold" size={20} className="mr-3" />
-            Continuar com Google
-          </Button>
+          <div className="w-full flex justify-center min-h-[44px]">
+            <div
+              ref={googleButtonRef}
+              data-testid="google-login-btn"
+              className={loading ? "pointer-events-none opacity-60" : ""}
+            />
+          </div>
+
+          {!googleReady && (
+            <p className="mt-3 text-xs text-center text-zinc-500">
+              {loading
+                ? "Entrando..."
+                : "Carregando login do Google..."}
+            </p>
+          )}
 
           <div className="mt-6 text-xs text-center text-zinc-500">
             Ao continuar você aceita nossos termos de uso.
