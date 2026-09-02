@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import jwt
+import secrets
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
@@ -15,6 +16,8 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
 import httpx
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 from pix_brcode import build_pix_payload
@@ -35,6 +38,7 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-5.6-luna")
 ADMIN_EMAIL = os.environ["ADMIN_EMAIL"]
 ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
 JWT_SECRET = os.environ["JWT_SECRET"]
+GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
 FREE_LIMIT = int(os.environ.get("FREE_MONTHLY_LIMIT", "5"))
 PREMIUM_LIMIT = int(os.environ.get("PREMIUM_MONTHLY_LIMIT", "100"))
 PREMIUM_PRICE_BRL = float(os.environ.get("PREMIUM_PRICE_BRL", "5"))
@@ -220,45 +224,69 @@ async def referrals_me(request: Request, user: User = Depends(current_user)):
 # ---------- Auth Endpoints ----------
 @api.post("/auth/session")
 async def auth_session(request: Request, response: Response):
+    """
+    Login com Google direto (Google Identity Services).
+    O frontend envia o ID token no campo "credential" (ou "id_token").
+    """
     body = await request.json()
-    session_id = body.get("session_id")
+    credential = body.get("credential") or body.get("id_token")
     ref_code = (body.get("referral_code") or "").strip().upper() or None
-    if not session_id:
-        raise HTTPException(status_code=400, detail="session_id obrigatório")
-    async with httpx.AsyncClient() as hc:
-        r = await hc.get(
-            "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-            headers={"X-Session-ID": session_id},
-            timeout=15,
-        )
-    if r.status_code != 200:
-        raise HTTPException(status_code=401, detail="Falha ao validar sessão Google")
-    data = r.json()
-    email = data["email"]
-    name = data.get("name") or email
-    picture = data.get("picture")
-    session_token = data["session_token"]
 
-    # Upsert user
+    if not credential:
+        raise HTTPException(status_code=400, detail="credential obrigatório")
+
+    # Valida o ID token diretamente com o Google.
+    try:
+        info = id_token.verify_oauth2_token(
+            credential,
+            google_requests.Request(),
+            GOOGLE_CLIENT_ID,
+        )
+    except Exception:
+        logger.exception("Falha ao validar token Google")
+        raise HTTPException(status_code=401, detail="Token Google inválido")
+
+    email = (info.get("email") or "").strip().lower()
+    name = info.get("name") or email
+    picture = info.get("picture")
+    email_verified = info.get("email_verified")
+
+    if not email:
+        raise HTTPException(status_code=401, detail="Conta Google sem e-mail")
+
+    if email_verified is False:
+        raise HTTPException(status_code=401, detail="E-mail Google não verificado")
+
+    # Cria ou atualiza o usuário.
     existing = await db.users.find_one({"email": email}, {"_id": 0})
     is_new = False
+
     if existing:
         user_id = existing["user_id"]
-        await db.users.update_one({"email": email}, {"$set": {"name": name, "picture": picture}})
+        await db.users.update_one(
+            {"email": email},
+            {"$set": {"name": name, "picture": picture}},
+        )
     else:
         is_new = True
         user_id = f"user_{uuid.uuid4().hex[:12]}"
-        role = "admin" if email == ADMIN_EMAIL else "user"
+        role = "admin" if email == ADMIN_EMAIL.lower() else "user"
         plan = "premium" if role == "admin" else "free"
         my_code = uuid.uuid4().hex[:6].upper()
+
         await db.users.insert_one({
-            "user_id": user_id, "email": email, "name": name, "picture": picture,
-            "plan": plan, "role": role,
-            "referral_code": my_code, "bonus_credits": 0,
+            "user_id": user_id,
+            "email": email,
+            "name": name,
+            "picture": picture,
+            "plan": plan,
+            "role": role,
+            "referral_code": my_code,
+            "bonus_credits": 0,
             "created_at": now_utc().isoformat(),
         })
 
-    # Apply referral bonus if the new user came in through a referral code
+    # Bônus por indicação para usuário novo.
     if is_new and ref_code:
         referrer = await db.users.find_one({"referral_code": ref_code}, {"_id": 0})
         if referrer and referrer["user_id"] != user_id:
@@ -275,19 +303,28 @@ async def auth_session(request: Request, response: Response):
                     {"user_id": referrer["user_id"]},
                     {"$inc": {"bonus_credits": 3}},
                 )
-    # Save session (7 days)
+
+    # Sessão própria do Roteira por 7 dias.
+    session_token = secrets.token_urlsafe(48)
     expires = now_utc() + timedelta(days=7)
+
     await db.user_sessions.insert_one({
         "user_id": user_id,
         "session_token": session_token,
         "expires_at": expires.isoformat(),
         "created_at": now_utc().isoformat(),
     })
+
     response.set_cookie(
-        key="session_token", value=session_token,
-        httponly=True, secure=True, samesite="none", path="/",
+        key="session_token",
+        value=session_token,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        path="/",
         max_age=7 * 24 * 60 * 60,
     )
+
     udoc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     return {"user": udoc, "session_token": session_token}
 
